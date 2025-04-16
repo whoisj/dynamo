@@ -135,7 +135,7 @@ class ChatProcessor:
 
     async def preprocess(self, raw_request: ChatCompletionRequest) -> PreprocessResult:
         request = self.parse_raw_request(raw_request)
-        
+
         # TODO: Revisit this later when adding multi-modal support for the frontend.
         # If no chat template is provided and tokenizer doesn't have one,
         # use a simple format that just concatenates messages
@@ -143,7 +143,6 @@ class ChatProcessor:
             chat_template = "{% for message in messages %}{% if message['role'] == 'user' %}User: {{ message['content'] }}\n{% elif message['role'] == 'assistant' %}Assistant: {{ message['content'] }}\n{% endif %}{% endfor %}Assistant:"
         else:
             chat_template = request.chat_template or self.tokenizer.chat_template
-
 
         (
             conversation,

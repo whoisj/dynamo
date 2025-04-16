@@ -90,16 +90,19 @@ class vLLMGenerateRequest(BaseModel):
         json_encoders={SamplingParams: lambda v: msgspec.json.encode(v)}
     )
 
+
 class MultiModalRequest(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     model: str
     image: str
-    max_tokens: int 
+    max_tokens: int
     prompt: str
+
 
 class vLLMMultimodalRequest(vLLMGenerateRequest):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     image_url: str
+
 
 class EncodeRequest(BaseModel):
     """
@@ -109,10 +112,12 @@ class EncodeRequest(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     image_url: str
 
+
 class EncodeResponse(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     image_features: List[List[List[float]]]
+
 
 class MyRequestOutput(BaseModel):
     """

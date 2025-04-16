@@ -13,9 +13,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import logging
 import uuid
-import json
 from enum import Enum
 from typing import AsyncIterator, Tuple, Union
 
@@ -24,13 +24,13 @@ from components.worker import VllmWorker
 from transformers import AutoTokenizer
 from utils.chat_processor import ChatProcessor, CompletionsProcessor, ProcessMixIn
 from utils.logging import check_required_workers
-from utils.protocol import MyRequestOutput, Tokens, vLLMMultimodalRequest, MultiModalRequest
+from utils.protocol import MultiModalRequest, MyRequestOutput, vLLMMultimodalRequest
 from utils.vllm import parse_vllm_args
 from vllm.engine.arg_utils import AsyncEngineArgs
-from vllm.entrypoints.openai.protocol import ChatCompletionRequest, CompletionRequest, ChatMessage
-from vllm.entrypoints.chat_utils import ChatCompletionMessageParam
+from vllm.entrypoints.openai.protocol import ChatCompletionRequest, CompletionRequest
 from vllm.outputs import RequestOutput
 from vllm.transformers_utils.tokenizer import AnyTokenizer
+
 from dynamo.runtime import EtcdKvCache
 from dynamo.sdk import async_on_start, depends, dynamo_context, dynamo_endpoint, service
 
@@ -120,7 +120,10 @@ class Processor(ProcessMixIn):
 
         router_mode = (await self.etcd_kv_cache.get("router")).decode()
         if router_mode == "kv" or router_mode == "random":
-            logger.warning("Multi-modal requests are not supported for router mode: %s", router_mode)
+            logger.warning(
+                "Multi-modal requests are not supported for router mode: %s",
+                router_mode,
+            )
             router_mode = "round-robin"
 
         engine_generator = await self.worker_client.round_robin(
@@ -139,13 +142,13 @@ class Processor(ProcessMixIn):
         async for response in await self._stream_response(
             request, output, request_id, conversation
         ):
-            if 'choices' in response and len(response['choices']) > 0:
-                delta = response['choices'][0].get('delta', {})
-                content = delta.get('content', '')
+            if "choices" in response and len(response["choices"]) > 0:
+                delta = response["choices"][0].get("delta", {})
+                content = delta.get("content", "")
                 combined_content += content
-                
+
                 # Yield complete content on final response
-                if response['choices'][0].get('finish_reason') is not None:
+                if response["choices"][0].get("finish_reason") is not None:
                     yield combined_content
 
     async def _generate_responses(
@@ -178,12 +181,12 @@ class Processor(ProcessMixIn):
                 raise NotImplementedError(
                     f"Request type {request_type} not implemented"
                 )
-    
+
     @dynamo_endpoint()
     async def generate(self, request: MultiModalRequest):
         msg = {
             "role": "user",
-            "content": "USER: <image>\nQuestion:" + request.prompt + " Answer:"
+            "content": "USER: <image>\nQuestion:" + request.prompt + " Answer:",
         }
 
         chat_request = ChatCompletionRequest(
@@ -193,7 +196,8 @@ class Processor(ProcessMixIn):
             max_tokens=request.max_tokens,
             request_id=str(uuid.uuid4()),
         )
-        
-        async for response in self._generate(chat_request, request.image, RequestType.CHAT):
-            yield json.dumps(response)
 
+        async for response in self._generate(
+            chat_request, request.image, RequestType.CHAT
+        ):
+            yield json.dumps(response)

@@ -14,17 +14,16 @@
 # limitations under the License.
 
 import logging
+from io import BytesIO
 from typing import AsyncIterator
 
-from io import BytesIO
-from PIL import Image
-from transformers import AutoImageProcessor
 import requests
 import torch
-
+from PIL import Image
+from transformers import AutoImageProcessor, LlavaForConditionalGeneration
 from utils.protocol import EncodeRequest, EncodeResponse
+
 from dynamo.sdk import dynamo_endpoint, service
-from transformers import LlavaForConditionalGeneration
 
 logger = logging.getLogger(__name__)
 
@@ -38,17 +37,16 @@ logger = logging.getLogger(__name__)
     workers=1,
 )
 class EncodeWorker:
-
     def __init__(self) -> None:
         # TODO: Parse the model from the config
         self.MODEL_ID = "llava-hf/llava-1.5-7b-hf"
 
-        self.image_processor = AutoImageProcessor.from_pretrained(self.MODEL_ID, trust_remote_code=True)
+        self.image_processor = AutoImageProcessor.from_pretrained(
+            self.MODEL_ID, trust_remote_code=True
+        )
 
         self.vision_model = LlavaForConditionalGeneration.from_pretrained(
-            self.MODEL_ID,
-            device_map="auto",
-            torch_dtype=torch.float16
+            self.MODEL_ID, device_map="auto", torch_dtype=torch.float16
         ).eval()
 
     @dynamo_endpoint()
@@ -58,18 +56,19 @@ class EncodeWorker:
 
         with torch.no_grad():
             vision_outputs = self.vision_model.vision_tower(
-                image_embeds['pixel_values'].to(self.vision_model.device)
+                image_embeds["pixel_values"].to(self.vision_model.device)
             )
 
             image_features = vision_outputs.last_hidden_state
             image_features = self.vision_model.multi_modal_projector(image_features)
-            yield EncodeResponse(image_features=image_features.tolist()).model_dump_json()
-
+            yield EncodeResponse(
+                image_features=image_features.tolist()
+            ).model_dump_json()
 
     def open_image(self, image: str) -> Image.Image:
-        if image.startswith('http') or image.startswith('https'):
+        if image.startswith("http") or image.startswith("https"):
             response = requests.get(image)
-            image_data = Image.open(BytesIO(response.content)).convert('RGB')
+            image_data = Image.open(BytesIO(response.content)).convert("RGB")
         else:
-            image_data = Image.open(image).convert('RGB')
+            image_data = Image.open(image).convert("RGB")
         return image_data

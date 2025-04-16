@@ -13,35 +13,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from functools import lru_cache
-from typing import Any, AsyncGenerator, Dict, List, Optional, Union
 import asyncio
 import logging
 import os
 import signal
+
 import torch
-
 from components.disagg_router import PyDisaggregatedRouter
-from components.prefill_worker import PrefillWorker
 from components.encode_worker import EncodeWorker
-from utils.nixl import NixlMetadataStore
-from utils.prefill_queue import PrefillQueue
-from utils.protocol import MyRequestOutput, vLLMMultimodalRequest
-from utils.protocol import EncodeRequest, EncodeResponse
+from components.prefill_worker import PrefillWorker
 from utils.logging import check_required_workers
-
+from utils.protocol import (
+    EncodeRequest,
+    EncodeResponse,
+    MyRequestOutput,
+    vLLMMultimodalRequest,
+)
 from utils.vllm import parse_vllm_args
 from vllm.entrypoints.openai.api_server import (
     build_async_engine_client_from_engine_args,
 )
-from vllm.remote_prefill import RemotePrefillParams, RemotePrefillRequest
-from vllm.sampling_params import RequestOutputKind
-
-from vllm import AsyncLLMEngine, AsyncEngineArgs
-from vllm.utils import get_distributed_init_method, get_ip, get_open_port
-from vllm.worker.worker import Worker
 from vllm.inputs.data import TokensPrompt
-
+from vllm.sampling_params import RequestOutputKind
 
 from dynamo.llm import KvMetricsPublisher
 from dynamo.sdk import async_on_start, depends, dynamo_context, dynamo_endpoint, service
@@ -184,7 +177,9 @@ class VllmWorker:
         )
         async for encode_response in encode_generator:
             encode_output = EncodeResponse.model_validate_json(encode_response.data())
-            image_features = torch.tensor(encode_output.image_features, device="cpu", dtype=torch.float16)
+            image_features = torch.tensor(
+                encode_output.image_features, device="cpu", dtype=torch.float16
+            )
 
         remote_prefill_params = None
         logger.info(
@@ -194,12 +189,14 @@ class VllmWorker:
         # rust HTTP requires Delta streaming
         request.sampling_params.output_kind = RequestOutputKind.DELTA
         async for response in self.engine_client.generate(
-            prompt=TokensPrompt(prompt_token_ids=request.engine_prompt["prompt_token_ids"], multi_modal_data={"image": image_features}),
+            prompt=TokensPrompt(
+                prompt_token_ids=request.engine_prompt["prompt_token_ids"],
+                multi_modal_data={"image": image_features},
+            ),
             sampling_params=request.sampling_params,
             request_id=request.request_id,
             remote_prefill_params=remote_prefill_params,
         ):
-
             yield MyRequestOutput(
                 request_id=response.request_id,
                 prompt=response.prompt,
@@ -208,6 +205,3 @@ class VllmWorker:
                 outputs=response.outputs,
                 finished=response.finished,
             ).model_dump_json()
-        
-        
-    

@@ -14,24 +14,20 @@
 # limitations under the License.
 
 import logging
-import signal
-import subprocess
-import sys
 from pathlib import Path
+from typing import AsyncGenerator
 
 from components.processor import Processor
 from components.worker import VllmWorker
 from pydantic import BaseModel
+from utils.protocol import MultiModalRequest
 
 from dynamo import sdk
-from dynamo.sdk import depends, service, api
-from dynamo.sdk.lib.config import ServiceConfig
+from dynamo.sdk import api, depends, service
 from dynamo.sdk.lib.image import DYNAMO_IMAGE
 
 logger = logging.getLogger(__name__)
 
-from typing import AsyncGenerator, List
-from utils.protocol import MultiModalRequest
 
 def get_http_binary_path():
     sdk_path = Path(sdk.__file__)
@@ -59,8 +55,15 @@ class Frontend:
     processor = depends(Processor)
 
     @api
-    async def generate(self, model: str, image: str, max_tokens: int = 300, prompt: str = "Describe the image in detail.") -> AsyncGenerator[str, None]:
-        request = MultiModalRequest(model=model, image=image, max_tokens=max_tokens, prompt=prompt)
+    async def generate(
+        self,
+        model: str,
+        image: str,
+        max_tokens: int = 300,
+        prompt: str = "Describe the image in detail.",
+    ) -> AsyncGenerator[str, None]:
+        request = MultiModalRequest(
+            model=model, image=image, max_tokens=max_tokens, prompt=prompt
+        )
         async for response in self.processor.generate(request.model_dump_json()):
             yield response
- 
