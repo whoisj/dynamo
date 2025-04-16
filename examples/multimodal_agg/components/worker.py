@@ -26,7 +26,7 @@ from components.prefill_worker import PrefillWorker
 from components.encode_worker import EncodeWorker
 from utils.nixl import NixlMetadataStore
 from utils.prefill_queue import PrefillQueue
-from utils.protocol import MyRequestOutput, vLLMGenerateRequest, vLLMMultimodalRequest
+from utils.protocol import MyRequestOutput, vLLMMultimodalRequest
 from utils.protocol import EncodeRequest, EncodeResponse
 from utils.logging import check_required_workers
 
@@ -174,42 +174,32 @@ class VllmWorker:
         await self.metrics_publisher.create_endpoint(component)
 
     @dynamo_endpoint()
-    async def generate(self, request: vLLMGenerateRequest):
-    # async def generate(self, request: vLLMMultimodalRequest):
-        # Get embedding for image
-        # image_url = raw_request.image_url
-        # Use a dummy image url for now
-        # image_url = "http://images.cocodataset.org/test2017/000000155781.jpg"
-        image_url = "/workspace/examples/e_agg/coffee_2.JPG"
-
-        print(f"worker generate request: {request.model_dump_json()}")
+    async def generate(self, request: vLLMMultimodalRequest):
+        image_url = request.image_url
 
         encode_generator = await self.encode_worker_client.round_robin(
             EncodeRequest(
-                request_id=request.request_id,
                 image_url=image_url,
             ).model_dump_json()
         )
-        print("after encode_generator")
         async for encode_response in encode_generator:
-            # print(f"Encode response: {encode_response}")
             encode_output = EncodeResponse.model_validate_json(encode_response.data())
-            # print("after encode_output")
-            # image_features = encode_output.image_features
             image_features = torch.tensor(encode_output.image_features, device="cpu", dtype=torch.float16)
-
-        print(f"Image features: {image_features}")
 
         remote_prefill_params = None
         logger.info(
             f"Prefilling locally for request {request.request_id} with length {len(request.engine_prompt['prompt_token_ids'])}"
         )
+
+        # rust HTTP requires Delta streaming
+        request.sampling_params.output_kind = RequestOutputKind.DELTA
         async for response in self.engine_client.generate(
             prompt=TokensPrompt(prompt_token_ids=request.engine_prompt["prompt_token_ids"], multi_modal_data={"image": image_features}),
             sampling_params=request.sampling_params,
             request_id=request.request_id,
             remote_prefill_params=remote_prefill_params,
         ):
+
             yield MyRequestOutput(
                 request_id=response.request_id,
                 prompt=response.prompt,
@@ -218,3 +208,6 @@ class VllmWorker:
                 outputs=response.outputs,
                 finished=response.finished,
             ).model_dump_json()
+        
+        
+    

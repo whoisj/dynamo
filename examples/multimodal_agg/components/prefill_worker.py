@@ -19,23 +19,18 @@ import logging
 import os
 import signal
 import sys
-import torch
-from typing import List, Optional
+
 from pydantic import BaseModel
 from utils.nixl import NixlMetadataStore
 from utils.prefill_queue import PrefillQueue
-from components.encode_worker import EncodeWorker
 from utils.vllm import parse_vllm_args
 from vllm.entrypoints.openai.api_server import (
     build_async_engine_client_from_engine_args,
 )
-from utils.protocol import EncodeRequest, EncodeResponse
 from vllm.inputs.data import TokensPrompt
 from vllm.remote_prefill import RemotePrefillParams, RemotePrefillRequest
-from utils.logging import check_required_workers
-from dynamo.sdk import async_on_start, dynamo_context, dynamo_endpoint, service, depends
 
-_IMAGE_TOKEN_INDEX = -200
+from dynamo.sdk import async_on_start, dynamo_context, dynamo_endpoint, service
 
 logger = logging.getLogger(__name__)
 
@@ -53,16 +48,11 @@ class RequestType(BaseModel):
     workers=1,
 )
 class PrefillWorker:
-    encode_worker = depends(EncodeWorker)
-
     def __init__(self):
         class_name = self.__class__.__name__
         self.engine_args = parse_vllm_args(class_name, "")
-        # Set "trust_remote_code" to True to allow loading models with custom tokens
-        # self.engine_args.trust_remote_code = True
         self._loaded_metadata = set()
         self.initialized = False
-        self.min_workers = 1
         if self.engine_args.enable_chunked_prefill is not False:
             logger.info("Chunked prefill is not supported yet, setting to False")
             self.engine_args.enable_chunked_prefill = False
@@ -90,17 +80,6 @@ class PrefillWorker:
 
     @async_on_start
     async def async_init(self):
-        runtime = dynamo_context["runtime"]
-        enc_comp_ns, enc_comp_name = EncodeWorker.dynamo_address()  # type: ignore
-        self.encode_worker_client = (
-            await runtime.namespace(enc_comp_ns)
-            .component(enc_comp_name)
-            .endpoint("encode")
-            .client()
-        )
-
-        await check_required_workers(self.encode_worker_client, self.min_workers)
-
         self._engine_context = build_async_engine_client_from_engine_args(
             self.engine_args
         )
@@ -165,54 +144,8 @@ class PrefillWorker:
                     )
                     async for _ in self.generate(prefill_request):
                         pass
-    async def combine_prompt_and_image(self, prompt_token_ids: List[int], image: Optional[torch.Tensor]) -> List[int]:
-        # tokenizer = await self.engine_client.get_tokenizer()
-        # prompt_ids = tokenizer(prompt).input_ids
-        # This prompt template may change per model
-        # prompt_template = "<|user|>\n{placeholders}\n{prompt}<|end|>\n<|assistant|>\n"
-
-        
-        if image is not None:
-            # hardcoded -- where the image token IDs go
-            prompt_token_ids = prompt_token_ids[:6] + [_IMAGE_TOKEN_INDEX] * image.shape[1] + prompt_token_ids[6:]
-        return prompt_token_ids
-
 
     async def generate(self, request: RemotePrefillRequest):
-        # Get embedding for image
-        # image_url = raw_request.image_url
-        # Use a dummy image url for now
-        image_url = "http://images.cocodataset.org/test2017/000000155781.jpg"
-        # """
-        encode_generator = await self.encode_worker_client.round_robin(
-            EncodeRequest(
-                request_id=request.request_id,
-                image_url=image_url,
-            ).model_dump_json()
-        )
-        print("after encode_generator")
-        async for encode_response in encode_generator:
-            # print(f"Encode response: {encode_response}")
-            encode_output = EncodeResponse.model_validate_json(encode_response.data())
-            # print("after encode_output")
-            # image_features = encode_output.image_features
-            image_features = torch.tensor(encode_output.image_features, device="cpu", dtype=torch.float16)
-            # print("after image_features")
-            # print(f"Image features: {image_features}")
-        # """
-        # # Use a dummy image features for now
-        # image_features = torch.randn(1, 576, 4096, dtype=torch.float16)
-        # with torch.no_grad():
-        #     image_features = torch.randn(1, 576, 4096, dtype=torch.float16, device="cuda")
-        
-        # prompt_with_chat = "\nUSER: " + '\n' + request.prompt + '\nASSISTANT:'
-        # print(f"Prompt with chat: {prompt_with_chat}")
-        print(f"Request prompt token ids: {request.prompt_token_ids}")
-        # prompt_token_ids = await self.combine_prompt_and_image(request.prompt_token_ids, image_features)
-        # print(f"Prompt token ids: {prompt_token_ids}")
-        print(f"Image features: {image_features}")
-
-
         sampling_params = request.sampling_params
         sampling_params.max_tokens = 1
         sampling_params.min_tokens = 1
@@ -237,9 +170,7 @@ class PrefillWorker:
 
         async for _ in self.engine_client.generate(
             request_id=request.request_id,
-            # prompt=TokensPrompt(prompt_token_ids=request.prompt_token_ids, multi_modal_data={"image": image_features}),
-            prompt=TokensPrompt(prompt_token_ids=request.prompt_token_ids, multi_modal_data={"image": image_features}),
-            # prompt=TokensPrompt(prompt_token_ids=request.prompt_token_ids),
+            prompt=TokensPrompt(prompt_token_ids=request.prompt_token_ids),
             sampling_params=sampling_params,
             remote_prefill_params=remote_prefill_params,
         ):

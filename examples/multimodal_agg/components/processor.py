@@ -15,25 +15,24 @@
 
 import logging
 import uuid
+import json
 from enum import Enum
 from typing import AsyncIterator, Tuple, Union
 
 from components.kv_router import Router
 from components.worker import VllmWorker
-from components.encode_worker import EncodeWorker
 from transformers import AutoTokenizer
 from utils.chat_processor import ChatProcessor, CompletionsProcessor, ProcessMixIn
 from utils.logging import check_required_workers
-from utils.protocol import MyRequestOutput, Tokens, vLLMGenerateRequest
+from utils.protocol import MyRequestOutput, Tokens, vLLMMultimodalRequest, MultiModalRequest
 from utils.vllm import parse_vllm_args
 from vllm.engine.arg_utils import AsyncEngineArgs
-from vllm.entrypoints.openai.protocol import ChatCompletionRequest, CompletionRequest
+from vllm.entrypoints.openai.protocol import ChatCompletionRequest, CompletionRequest, ChatMessage
+from vllm.entrypoints.chat_utils import ChatCompletionMessageParam
 from vllm.outputs import RequestOutput
 from vllm.transformers_utils.tokenizer import AnyTokenizer
-
-import torch
 from dynamo.runtime import EtcdKvCache
-from dynamo.sdk import async_on_start, depends, dynamo_context, dynamo_endpoint, service, api
+from dynamo.sdk import async_on_start, depends, dynamo_context, dynamo_endpoint, service
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +96,6 @@ class Processor(ProcessMixIn):
 
         await check_required_workers(self.worker_client, self.min_workers)
 
-
         self.etcd_kv_cache = await EtcdKvCache.create(
             runtime.etcd_client(),
             "/dynamo/processor/",
@@ -107,10 +105,10 @@ class Processor(ProcessMixIn):
     async def _generate(
         self,
         raw_request: Union[CompletionRequest, ChatCompletionRequest],
+        image: str,
         request_type: RequestType,
     ):
         request_id = str(uuid.uuid4())
-
         logger.debug(f"Got raw request: {raw_request}")
         (
             request,
@@ -121,59 +119,34 @@ class Processor(ProcessMixIn):
         ) = await self._parse_raw_request(raw_request)
 
         router_mode = (await self.etcd_kv_cache.get("router")).decode()
-        if router_mode == "kv":
-            async for route_response in self.router.generate(
-                Tokens(tokens=engine_prompt["prompt_token_ids"]).model_dump_json()
-            ):
-                worker_id, prefix_hit_rate = route_response.split("_")
-                prefix_hit_rate = float(prefix_hit_rate)
-                logger.info(
-                    f"Worker ID: {worker_id} with estimated prefix hit rate: {prefix_hit_rate}"
-                )
-                break
+        if router_mode == "kv" or router_mode == "random":
+            logger.warning("Multi-modal requests are not supported for router mode: %s", router_mode)
+            router_mode = "round-robin"
 
-            if worker_id == "":
-                engine_generator = await self.worker_client.generate(
-                    vLLMGenerateRequest(
-                        engine_prompt=engine_prompt,
-                        sampling_params=sampling_params,
-                        request_id=request_id,
-                        prefix_hit_rate=prefix_hit_rate,
-                    ).model_dump_json()
-                )
-            else:
-                engine_generator = await self.worker_client.direct(
-                    vLLMGenerateRequest(
-                        engine_prompt=engine_prompt,
-                        sampling_params=sampling_params,
-                        request_id=request_id,
-                        prefix_hit_rate=prefix_hit_rate,
-                    ).model_dump_json(),
-                    int(worker_id),
-                )
-        elif router_mode == "random":
-            engine_generator = await self.worker_client.generate(
-                vLLMGenerateRequest(
-                    engine_prompt=engine_prompt,
-                    sampling_params=sampling_params,
-                    request_id=request_id,
-                ).model_dump_json()
-            )
-        elif router_mode == "round-robin":
-            engine_generator = await self.worker_client.round_robin(
-                vLLMGenerateRequest(
-                    engine_prompt=engine_prompt,
-                    sampling_params=sampling_params,
-                    request_id=request_id,
-                ).model_dump_json()
-            )
+        engine_generator = await self.worker_client.round_robin(
+            vLLMMultimodalRequest(
+                engine_prompt=engine_prompt,
+                sampling_params=sampling_params,
+                request_id=request_id,
+                image_url=image,
+            ).model_dump_json()
+        )
 
         output = self._generate_responses(engine_generator, request_type)
 
+        # Initialize combined content
+        combined_content = ""
         async for response in await self._stream_response(
             request, output, request_id, conversation
         ):
-            yield response
+            if 'choices' in response and len(response['choices']) > 0:
+                delta = response['choices'][0].get('delta', {})
+                content = delta.get('content', '')
+                combined_content += content
+                
+                # Yield complete content on final response
+                if response['choices'][0].get('finish_reason') is not None:
+                    yield combined_content
 
     async def _generate_responses(
         self, engine_generator: AsyncIterator[RequestOutput], request_type: RequestType
@@ -205,13 +178,22 @@ class Processor(ProcessMixIn):
                 raise NotImplementedError(
                     f"Request type {request_type} not implemented"
                 )
+    
+    @dynamo_endpoint()
+    async def generate(self, request: MultiModalRequest):
+        msg = {
+            "role": "user",
+            "content": "USER: <image>\nQuestion:" + request.prompt + " Answer:"
+        }
 
-    @dynamo_endpoint(name="chat/completions")
-    async def chat_completions(self, raw_request: ChatCompletionRequest):    
-        async for response in self._generate(raw_request, RequestType.CHAT):
-            yield response
+        chat_request = ChatCompletionRequest(
+            model=request.model,
+            messages=[msg],
+            stream=True,
+            max_tokens=request.max_tokens,
+            request_id=str(uuid.uuid4()),
+        )
+        
+        async for response in self._generate(chat_request, request.image, RequestType.CHAT):
+            yield json.dumps(response)
 
-    # @dynamo_endpoint()
-    # async def completions(self, raw_request: CompletionRequest):
-    #     async for response in self._generate(raw_request, RequestType.COMPLETION):
-    #         yield response
