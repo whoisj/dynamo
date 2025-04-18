@@ -44,7 +44,6 @@ class FrontendConfig(BaseModel):
     port: int = 8080
 
 
-# todo this should be called ApiServer
 @service(
     resources={"cpu": "10", "memory": "20Gi"},
     workers=1,

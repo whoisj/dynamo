@@ -102,6 +102,7 @@ class Processor(ProcessMixIn):
             {"router": self.engine_args.router},
         )
 
+    # Main method to parse the request and send the request to the vllm worker.
     async def _generate(
         self,
         raw_request: Union[CompletionRequest, ChatCompletionRequest],
@@ -121,7 +122,7 @@ class Processor(ProcessMixIn):
         router_mode = (await self.etcd_kv_cache.get("router")).decode()
         if router_mode == "kv" or router_mode == "random":
             logger.warning(
-                "Multi-modal requests are not supported for router mode: %s",
+                "Multimodal requests are not supported for router mode: %s",
                 router_mode,
             )
             router_mode = "round-robin"
@@ -137,7 +138,8 @@ class Processor(ProcessMixIn):
 
         output = self._generate_responses(engine_generator, request_type)
 
-        # Initialize combined content
+        # TODO: This is a temporary solution to combine the content from the engine generator.
+        # After having the multimodal support in OpenAI compatible frontend, we can use that directly without the need to manually combine the content.
         combined_content = ""
         async for response in await self._stream_response(
             request, output, request_id, conversation
@@ -151,6 +153,7 @@ class Processor(ProcessMixIn):
                 if response["choices"][0].get("finish_reason") is not None:
                     yield combined_content
 
+    # This method is used to process the responses from the engine generator.
     async def _generate_responses(
         self, engine_generator: AsyncIterator[RequestOutput], request_type: RequestType
     ) -> AsyncIterator[Union[RequestOutput, Tuple[int, RequestOutput]]]:
@@ -182,8 +185,10 @@ class Processor(ProcessMixIn):
                     f"Request type {request_type} not implemented"
                 )
 
+    # The generate endpoint will be used by the frontend to handle incoming requests.
     @dynamo_endpoint()
     async def generate(self, request: MultiModalRequest):
+        # TODO: After having the multimodal support in OpenAI compatible frontend, we can use that directly and remove the custom endpoint.
         msg = {
             "role": "user",
             "content": "USER: <image>\nQuestion:" + request.prompt + " Answer:",
