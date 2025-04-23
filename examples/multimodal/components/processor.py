@@ -19,7 +19,6 @@ import uuid
 from enum import Enum
 from typing import AsyncIterator, Tuple, Union
 
-from components.kv_router import Router
 from components.worker import VllmWorker
 from transformers import AutoTokenizer
 from utils.chat_processor import ChatProcessor, CompletionsProcessor, ProcessMixIn
@@ -56,7 +55,6 @@ class Processor(ProcessMixIn):
     """
 
     worker = depends(VllmWorker)
-    router = depends(Router)
 
     def __init__(self):
         class_name = self.__class__.__name__
@@ -120,21 +118,32 @@ class Processor(ProcessMixIn):
         ) = await self._parse_raw_request(raw_request)
 
         router_mode = (await self.etcd_kv_cache.get("router")).decode()
-        if router_mode == "kv" or router_mode == "random":
-            logger.warning(
-                "Multimodal requests are not supported for router mode: %s",
-                router_mode,
+        if router_mode == "kv":
+            logger.info(
+                "Multimodal requests are not supported for kv router mode, falling back to round-robin",
             )
             router_mode = "round-robin"
 
-        engine_generator = await self.worker_client.round_robin(
-            vLLMMultimodalRequest(
-                engine_prompt=engine_prompt,
-                sampling_params=sampling_params,
-                request_id=request_id,
-                image_url=image,
-            ).model_dump_json()
-        )
+        if router_mode == "random":
+            engine_generator = await self.worker_client.generate(
+                vLLMMultimodalRequest(
+                    engine_prompt=engine_prompt,
+                    sampling_params=sampling_params,
+                    request_id=request_id,
+                    image_url=image,
+                ).model_dump_json()
+            )
+        elif router_mode == "round-robin":
+            engine_generator = await self.worker_client.round_robin(
+                vLLMMultimodalRequest(
+                    engine_prompt=engine_prompt,
+                    sampling_params=sampling_params,
+                    request_id=request_id,
+                    image_url=image,
+                ).model_dump_json()
+            )
+        else:
+            raise NotImplementedError(f"Router mode {router_mode} not implemented")
 
         output = self._generate_responses(engine_generator, request_type)
 
