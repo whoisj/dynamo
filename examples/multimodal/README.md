@@ -17,12 +17,12 @@ limitations under the License.
 
 # Multimodal Deployment Examples
 
-This directory contains examples and reference implementations for deploying Multimodal model with Dynamo.
+This directory contains examples and reference implementations for deploying a multimodal model with Dynamo.
 
 ## Components
 
-- workers: For aggregated serving, we have two workers, one for encoding and one for prefilling and decoding.
-- router: Handles API requests and routes them to appropriate workers based on specified strategy. Currently only supports round-robin strategy.
+- workers: For aggregated serving, we have two workers, [encode_worker](components/encode_worker.py) for encoding and [vllm_worker](components/worker.py) for prefilling and decoding.
+- processor: Tokenizes the prompt and passes it to the vllm worker.
 - frontend: Custom endpoint to handle incoming requests.
 
 

@@ -119,6 +119,10 @@ class Processor(ProcessMixIn):
 
         router_mode = (await self.etcd_kv_cache.get("router")).decode()
         if router_mode == "kv":
+            # The current KV router does not support multimodal requests because
+            # it performs cache lookup based solely on prompt tokens. At this stage,
+            # multimodal data (e.g., image features) is not yet available, so the router
+            # cannot select the optimal worker using both prompt and image inputs.
             logger.info(
                 "Multimodal requests are not supported for kv router mode, falling back to round-robin",
             )
