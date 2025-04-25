@@ -79,7 +79,7 @@ The `dynamo serve` command deploys the entire service graph, automatically handl
 
 ```bash
 curl -X 'POST' \
-  'http://localhost:3000/generate' \
+  'http://localhost:8000/generate' \
   -H 'accept: text/event-stream' \
   -H 'Content-Type: application/json' \
   -d '{
@@ -142,8 +142,9 @@ The deployment process involves two distinct build steps:
 export PROJECT_ROOT=$(pwd)
 export KUBE_NS=hello-world  # Must match your Kubernetes namespace
 export DYNAMO_CLOUD=https://${KUBE_NS}.dev.aire.nvidia.com
-dynamo cloud login $DYNAMO_CLOUD
 ```
+
+The `DYNAMO_CLOUD` environment variable is required for all Dynamo deployment commands. Make sure it's set before running any deployment operations.
 
 2. **Build the Dynamo Base Image**
 
@@ -173,10 +174,10 @@ Once you create the Dynamo deployment, a pod prefixed with `yatai-dynamonim-imag
 
 ```bash
 # Forward the service port to localhost
-kubectl -n ${KUBE_NS} port-forward svc/${HELM_RELEASE}-frontend 3000:3000
+kubectl -n ${KUBE_NS} port-forward svc/${HELM_RELEASE}-frontend 8000:8000
 
 # Test the API endpoint
-curl -X 'POST' 'http://localhost:3000/generate' \
+curl -X 'POST' 'http://localhost:8000/generate' \
     -H 'accept: text/event-stream' \
     -H 'Content-Type: application/json' \
     -d '{"text": "test"}'
