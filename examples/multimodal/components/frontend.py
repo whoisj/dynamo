@@ -23,7 +23,7 @@ from pydantic import BaseModel
 from utils.protocol import MultiModalRequest
 
 from dynamo import sdk
-from dynamo.sdk import api, depends, service
+from dynamo.sdk import depends, dynamo_endpoint, service
 from dynamo.sdk.lib.image import DYNAMO_IMAGE
 
 logger = logging.getLogger(__name__)
@@ -53,7 +53,7 @@ class Frontend:
     worker = depends(VllmWorker)
     processor = depends(Processor)
 
-    @api
+    @dynamo_endpoint(is_api=True)
     async def generate(
         self,
         model: str,
