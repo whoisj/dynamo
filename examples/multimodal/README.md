@@ -23,7 +23,7 @@ This directory contains examples and reference implementations for deploying a m
 
 - workers: For aggregated serving, we have two workers, [encode_worker](components/encode_worker.py) for encoding and [vllm_worker](components/worker.py) for prefilling and decoding.
 - processor: Tokenizes the prompt and passes it to the vllm worker.
-- frontend: Custom endpoint to handle incoming requests.
+- frontend: Http endpoint to handle incoming requests.
 
 
 #### Multimodal Aggregated serving
@@ -43,13 +43,16 @@ dynamo serve graphs.agg:Frontend -f ./configs/agg.yaml
 
 In another terminal:
 ```bash
-curl -X POST 'http://localhost:3000/generate' \
-  -H 'accept: application/json' \
-  -H 'Content-Type: multipart/form-data' \
-  -F 'model=llava-hf/llava-1.5-7b-hf' \
-  -F 'image=http://images.cocodataset.org/test2017/000000155781.jpg' \
-  -F 'prompt=Describe the image' \
-  -F 'max_tokens=300' | jq
+curl -X 'POST' \
+  'http://localhost:8000/generate' \
+  -H 'accept: text/event-stream' \
+  -H 'Content-Type: application/json' \
+  -d '{
+  "model":"llava-hf/llava-1.5-7b-hf",
+  "image":"http://images.cocodataset.org/test2017/000000155781.jpg",
+  "prompt":"Describe the image",
+  "max_tokens":300
+}' | jq
 ```
 
 You should see a response similar to this:
