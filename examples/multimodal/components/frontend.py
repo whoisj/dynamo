@@ -25,6 +25,7 @@ from dynamo.sdk import DYNAMO_IMAGE, depends, dynamo_endpoint, service
 
 logger = logging.getLogger(__name__)
 
+
 @service(
     dynamo={
         "enabled": True,
@@ -40,10 +41,7 @@ class Frontend:
     processor = depends(Processor)
 
     @dynamo_endpoint(is_api=True)
-    async def generate(
-        self,
-        request: MultiModalRequest
-    ):
+    async def generate(self, request: MultiModalRequest):
         async def content_generator():
             async for response in self.processor.generate(request.model_dump_json()):
                 yield response
