@@ -18,9 +18,8 @@ use std::{future::Future, pin::Pin};
 use std::{io::Read, sync::Arc};
 
 use dynamo_llm::{
-    backend::ExecutionContext, kv_router::publisher::KvMetricsPublisher,
+    backend::ExecutionContext, engines::StreamingEngine, kv_router::publisher::KvMetricsPublisher,
     model_card::model::ModelDeploymentCard,
-    types::openai::chat_completions::OpenAIChatCompletionsStreamingEngine,
 };
 use dynamo_runtime::{protocols::Endpoint, DistributedRuntime};
 
@@ -60,7 +59,7 @@ pub enum EngineConfig {
     /// A Full service engine does it's own tokenization and prompt formatting.
     StaticFull {
         service_name: String,
-        engine: OpenAIChatCompletionsStreamingEngine,
+        engine: Arc<dyn StreamingEngine>,
         card: Box<ModelDeploymentCard>,
     },
 
@@ -181,9 +180,19 @@ pub async fn run(
         }
     };
 
-    // If we are in a distributed system, we need to know our component upfront
     let dyn_input = match &in_opt {
         Input::Endpoint(endpoint_path) => {
+            if model_path.as_ref().map(|mp| mp.is_file()).unwrap_or(false)
+                && flags.model_config.is_none()
+            {
+                // TODO We need to convert tokenizer extract from GGUF file into something we can
+                // publish to NATS. Ideally `tokenizer.json` directly, but otherwise an
+                // intermediate format.
+                tracing::error!("Serving GGUF files in a distributed system requires `--model-config <hf-repo-dir>` so that we can find the tokenzier config");
+                return Ok(());
+            }
+
+            // If we are in a distributed system, we need to know our component upfront
             let distributed_runtime = DistributedRuntime::from_settings(runtime.clone()).await?;
             let endpoint_id: Endpoint = endpoint_path.parse()?;
             Some(DynInput {
@@ -217,7 +226,10 @@ pub async fn run(
                     "out=echo_core need to find the tokenizer. Pass flag --model-path <path>"
                 );
             };
-            card.requires_preprocessing = true;
+
+            // TODO: Switch to `true` once pre-processing moves ingress side
+            card.requires_preprocessing = false;
+
             EngineConfig::StaticCore {
                 service_name: card.service_name.clone(),
                 engine: dynamo_llm::engines::make_engine_core(),
