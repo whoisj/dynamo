@@ -124,7 +124,7 @@ class Processor(ProcessMixIn):
             # multimodal data (e.g., image features) is not yet available, so the router
             # cannot select the optimal worker using both prompt and image inputs.
             logger.info(
-                "Multimodal requests are not supported for kv router mode, falling back to round-robin",
+                "Multimodal requests are not supported for kv router mode, defaulting to round-robin",
             )
             router_mode = "round-robin"
 

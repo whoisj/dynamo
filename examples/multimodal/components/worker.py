@@ -85,7 +85,7 @@ class VllmWorker:
 
         if self.engine_args.router == "kv":
             logger.info(
-                "Multimodal requests are not supported for kv router mode, falling back to round-robin"
+                "Multimodal requests are not supported for kv router mode, defaulting to round-robin"
             )
             self.engine_args.router = "round-robin"
 
