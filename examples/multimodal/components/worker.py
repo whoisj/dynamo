@@ -33,7 +33,6 @@ from vllm.entrypoints.openai.api_server import (
 from vllm.inputs.data import TokensPrompt
 from vllm.sampling_params import RequestOutputKind
 
-from dynamo.llm import KvMetricsPublisher
 from dynamo.sdk import async_on_start, depends, dynamo_context, dynamo_endpoint, service
 
 logger = logging.getLogger(__name__)
@@ -63,12 +62,9 @@ class VllmWorker:
         )
 
         if self.engine_args.remote_prefill:
-            logger.warning(
-                "This example uses local prefill, setting remote prefill to False"
+            raise NotImplementedError(
+                "Remote prefill is not supported for aggregated multimodal example"
             )
-            self.engine_args.remote_prefill = False
-
-        self.metrics_publisher = KvMetricsPublisher()
 
         signal.signal(signal.SIGTERM, self.shutdown_vllm_engine)
         signal.signal(signal.SIGINT, self.shutdown_vllm_engine)
@@ -84,10 +80,9 @@ class VllmWorker:
             raise RuntimeError("Failed to initialize engine client")
 
         if self.engine_args.router == "kv":
-            logger.info(
-                "Multimodal requests are not supported for kv router mode, defaulting to round-robin"
+            raise NotImplementedError(
+                "Multimodal requests are not supported for kv router mode"
             )
-            self.engine_args.router = "round-robin"
 
         runtime = dynamo_context["runtime"]
 
@@ -115,10 +110,6 @@ class VllmWorker:
             logger.error(f"Error during shutdown: {e}")
         finally:
             loop.stop()
-
-    async def create_metrics_publisher_endpoint(self):
-        component = dynamo_context["component"]
-        await self.metrics_publisher.create_endpoint(component)
 
     @dynamo_endpoint()
     async def generate(self, request: vLLMMultimodalRequest):

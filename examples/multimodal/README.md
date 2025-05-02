@@ -31,8 +31,18 @@ This directory contains examples and reference implementations for deploying a m
 In this deployment, we have two workers, [encode_worker](components/encode_worker.py) and [vllm_worker](components/worker.py).
 The encode worker is responsible for encoding the image and passing the embeddings to the vllm worker via NATS.
 The vllm worker then prefills and decodes the prompt, just like the [LLM aggregated serving](../llm/README.md) example.
-By disagregating the encoding from the prefilling and decoding, we can have a more flexible deployment and scale the
-encode worker independently from the prefilling and decoding workers if needed.
+By separating the encode from the prefill and decode stages, we can have a more flexible deployment and scale the
+encode worker independently from the prefill and decode workers if needed.
+
+This figure shows the flow of the deployment:
+```
+
++------+      +-----------+      +------------------+      image url       +---------------+
+| HTTP |----->| processor |----->|   vllm worker    |--------------------->| encode worker |
+|      |<-----|           |<-----|                  |<---------------------|               |
++------+      +-----------+      +------------------+   image embeddings   +---------------+
+
+```
 
 ```bash
 cd $DYNAMO_HOME/examples/multimodal

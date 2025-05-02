@@ -57,6 +57,7 @@ class EncodeWorker:
         image_embeds = self.image_processor(images=image, return_tensors="pt")
 
         with torch.no_grad():
+            logger.debug(f"Vision model device: {self.vision_model.device}")
             vision_outputs = self.vision_model.vision_tower(
                 image_embeds["pixel_values"].to(self.vision_model.device)
             )
@@ -68,6 +69,7 @@ class EncodeWorker:
             ).model_dump_json()
 
     def open_image(self, image: str) -> Image.Image:
+        # TODO: Have a seperate field for url and non url - and avoid auto detection
         try:
             if image.startswith("http") or image.startswith("https"):
                 response = requests.get(image)
