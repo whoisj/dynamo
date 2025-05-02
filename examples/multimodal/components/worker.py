@@ -120,10 +120,12 @@ class VllmWorker:
                 image_url=image_url,
             ).model_dump_json()
         )
+
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         async for encode_response in encode_generator:
             encode_output = EncodeResponse.model_validate_json(encode_response.data())
             image_features = torch.tensor(
-                encode_output.image_features, device="cpu", dtype=torch.float16
+                encode_output.image_features, device=device, dtype=torch.float16
             )
 
         remote_prefill_params = None
