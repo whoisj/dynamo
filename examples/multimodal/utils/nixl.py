@@ -65,7 +65,6 @@ class NixlMetadataStore:
         self._stored: set[str] = set()
 
         self._cached: dict[str, NixlMetadata] = {}
-        self._cached_bytes: dict[str, bytes] = {}
         self._client = runtime.etcd_client()
         if self._client is None:
             raise Exception("Cannot be used with static workers")
@@ -104,19 +103,14 @@ class NixlMetadataStore:
         return deserialized_metadata
 
     async def get_bytes(self, engine_id: str) -> bytes:
-        # Check if the metadata is already cached
-        # if engine_id in self._cached_bytes:
-        #     logger.info(f"Returning cached value for engine_id: {engine_id}")
-        #     return self._cached_bytes[engine_id]
-
-        # Slow path, fetch from etcd and cache results if found.
+        # Notice that we DO NOT cache the *_bytes calls because we must assume that the remote
+        # worker's metadata is fluid.
         key = "/".join([self._key_prefix, engine_id])
         values = await self._client.kv_get_prefix(key)
         for item in values:
             if "value" in item and item["value"] is not None:
                 data = item["value"]
-                logger.info(f"Data retrieved {{ size: <{len(data)} bytes>, engine_id: {engine_id} }}.")
-                self._cached_bytes[engine_id] = data
+                logger.debug(f"Data retrieved {{ size: <{len(data)} bytes>, engine_id: {engine_id} }}.")
                 return data
 
         raise Exception(f"Metadata for engine {engine_id} not found")
@@ -128,7 +122,9 @@ class NixlMetadataStore:
         self._stored.add(engine_id)
 
     async def put_bytes(self, engine_id: str, metadata_bytes: bytes):
+        # Notice that we DO NOT cache the *_bytes calls because we must assume that the remote
+        # worker's metadata is fluid.
         key = "/".join([self._key_prefix, engine_id])
         await self._client.kv_put(key, metadata_bytes, None)
         self._stored.add(engine_id)
-        logger.info(f"Data written: {{ size: <{len(metadata_bytes)} bytes>, engine_id: {engine_id} }}.")
+        logger.debug(f"Data written: {{ size: <{len(metadata_bytes)} bytes>, engine_id: {engine_id} }}.")
