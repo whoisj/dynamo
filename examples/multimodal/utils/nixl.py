@@ -65,16 +65,11 @@ class NixlMetadataStore:
         self._stored: set[str] = set()
 
         self._cached: dict[str, NixlMetadata] = {}
+        self._cached_bytes: dict[str, bytes] = {}
         self._client = runtime.etcd_client()
         if self._client is None:
             raise Exception("Cannot be used with static workers")
         self._key_prefix = f"{self._namespace}/{NixlMetadataStore.NIXL_METADATA_KEY}"
-
-    async def put(self, engine_id, metadata: NixlMetadata):
-        serialized_metadata = msgspec.msgpack.encode(metadata)
-        key = "/".join([self._key_prefix, engine_id])
-        await self._client.kv_put(key, serialized_metadata, None)
-        self._stored.add(engine_id)
 
     async def get(self, engine_id) -> NixlMetadata:
         try:
@@ -104,6 +99,36 @@ class NixlMetadataStore:
             # )
 
         except Exception as e:
-            raise Exception("Error retrieving metadata for engine {engine_id}") from e
+            raise Exception(f"Error retrieving metadata for engine {engine_id}") from e
 
         return deserialized_metadata
+
+    async def get_bytes(self, engine_id: str) -> bytes:
+        # Check if the metadata is already cached
+        # if engine_id in self._cached_bytes:
+        #     logger.info(f"Returning cached value for engine_id: {engine_id}")
+        #     return self._cached_bytes[engine_id]
+
+        # Slow path, fetch from etcd and cache results if found.
+        key = "/".join([self._key_prefix, engine_id])
+        values = await self._client.kv_get_prefix(key)
+        for item in values:
+            if "value" in item and item["value"] is not None:
+                data = item["value"]
+                logger.info(f"Data retrieved {{ size: <{len(data)} bytes>, engine_id: {engine_id} }}.")
+                self._cached_bytes[engine_id] = data
+                return data
+
+        raise Exception(f"Metadata for engine {engine_id} not found")
+
+    async def put(self, engine_id, metadata: NixlMetadata):
+        serialized_metadata = msgspec.msgpack.encode(metadata)
+        key = "/".join([self._key_prefix, engine_id])
+        await self._client.kv_put(key, serialized_metadata, None)
+        self._stored.add(engine_id)
+
+    async def put_bytes(self, engine_id: str, metadata_bytes: bytes):
+        key = "/".join([self._key_prefix, engine_id])
+        await self._client.kv_put(key, metadata_bytes, None)
+        self._stored.add(engine_id)
+        logger.info(f"Data written: {{ size: <{len(metadata_bytes)} bytes>, engine_id: {engine_id} }}.")
