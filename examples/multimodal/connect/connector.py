@@ -22,8 +22,8 @@ from .descriptor import Descriptor
 from .device import Device
 from .device_kind import DeviceKind
 from .operation_kind import OperationKind
-from .read_operation import ReadOperation
 from .readable_operation import ReadableOperation
+from .read_operation import ReadOperation
 from .remote import Remote
 from .serialized_request import SerializedRequest
 from .writable_operation import WritableOperation
