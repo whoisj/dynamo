@@ -109,7 +109,7 @@ class EncodeRequest(BaseModel):
     """
     Serializable class of all the fields vLLM engine requires for inference
     """
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(arbitrary_types_allowed=True, ser_json_bytes='base64', val_json_bytes='base64')
     image_url: str
     request_id: str
     serialized_request: Optional[connect.SerializedRequest] = None

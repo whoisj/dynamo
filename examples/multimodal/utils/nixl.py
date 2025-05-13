@@ -102,29 +102,9 @@ class NixlMetadataStore:
 
         return deserialized_metadata
 
-    async def get_bytes(self, engine_id: str) -> bytes:
-        # Notice that we DO NOT cache the *_bytes calls because we must assume that the remote
-        # worker's metadata is fluid.
-        key = "/".join([self._key_prefix, engine_id])
-        values = await self._client.kv_get_prefix(key)
-        for item in values:
-            if "value" in item and item["value"] is not None:
-                data = item["value"]
-                logger.debug(f"Data retrieved {{ size: <{len(data)} bytes>, engine_id: {engine_id} }}.")
-                return data
-
-        raise Exception(f"Metadata for engine {engine_id} not found")
-
     async def put(self, engine_id, metadata: NixlMetadata):
         serialized_metadata = msgspec.msgpack.encode(metadata)
         key = "/".join([self._key_prefix, engine_id])
         await self._client.kv_put(key, serialized_metadata, None)
         self._stored.add(engine_id)
 
-    async def put_bytes(self, engine_id: str, metadata_bytes: bytes):
-        # Notice that we DO NOT cache the *_bytes calls because we must assume that the remote
-        # worker's metadata is fluid.
-        key = "/".join([self._key_prefix, engine_id])
-        await self._client.kv_put(key, metadata_bytes, None)
-        self._stored.add(engine_id)
-        logger.debug(f"Data written: {{ size: <{len(metadata_bytes)} bytes>, engine_id: {engine_id} }}.")

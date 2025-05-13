@@ -14,12 +14,14 @@
 # limitations under the License.
 
 import asyncio
+import connect
 import logging
 import signal
 import uuid
 import cupy
 import torch
 from components.encode_worker import VllmEncodeWorker
+from dynamo.sdk import async_on_start, depends, dynamo_context, dynamo_endpoint, service
 from utils.logging import check_required_workers
 from utils.protocol import (
     EncodeRequest,
@@ -33,9 +35,6 @@ from vllm.entrypoints.openai.api_server import (
 )
 from vllm.inputs.data import TokensPrompt
 from vllm.sampling_params import RequestOutputKind
-
-from dynamo.sdk import async_on_start, depends, dynamo_context, dynamo_endpoint, service
-import connect
 
 logger = logging.getLogger(__name__)
 
@@ -141,7 +140,7 @@ class VllmDecodeWorker:
         embeddings, descriptor = self._embeddings_descriptor
 
         # Create a new writable operation from the descriptor.
-        with await self._connector.create_writable(descriptor) as writable:
+        with self._connector.create_writable(descriptor) as writable:
             # Extract serialized metadata about the operation from the writable operation,
             # and use it to create a new EncodeRequest.
             encode_request = EncodeRequest(
